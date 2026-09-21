@@ -52,20 +52,35 @@
         .tabulator-row {
             background-color: #ffffff !important;
             border-bottom: 1px solid #f1f5f9 !important;
-        }
-        .tabulator-row:nth-child(even) {
-            background-color: #f8fafc !important;
-        }
-        .tabulator-row:hover {
-            background-color: #e0f2fe !important;
-        }
-        .tabulator-header input {
+        .tabulator-header .tabulator-header-filter input {
             background-color: #ffffff !important;
             color: #0f172a !important;
             border: 1px solid #94a3b8 !important;
             border-radius: 4px;
             padding: 4px 6px;
             font-size: 0.8rem;
+        }
+        /* ヘッダー部の固定表示（スティッキー）設定 */
+        .tabulator-header {
+            position: sticky !important;
+            top: 0;
+            z-index: 20 !important;
+        }
+        /* 固定列（Frozen Column）の視認性向上 */
+        .tabulator-cell.tabulator-frozen, .tabulator-col.tabulator-frozen {
+            background-color: #ffffff !important;
+            border-right: 2px solid #94a3b8 !important;
+            z-index: 10 !important;
+        }
+        .tabulator-row:nth-child(even) .tabulator-cell.tabulator-frozen {
+            background-color: #f8fafc !important;
+        }
+        .tabulator-row:hover .tabulator-cell.tabulator-frozen {
+            background-color: #e0f2fe !important;
+        }
+        .tabulator-header .tabulator-col.tabulator-frozen {
+            background-color: #0c4a8e !important;
+            z-index: 25 !important;
         }
         /* カスタムスクロールバー */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -688,7 +703,20 @@
         }
 
         function setupTable(data) {
-            const tableCols = columnDefs.map(col => {
+            // 「学校名」が含まれる列の位置を検出（学校名列までの全列を固定表示に設定）
+            let schoolNameColIndex = -1;
+            columnDefs.forEach((col, idx) => {
+                let title = col.originalTitle.toLowerCase();
+                if (schoolNameColIndex === -1 && (title.includes('学校名') || title.includes('学校') || title.includes('校名') || title.includes('school'))) {
+                    schoolNameColIndex = idx;
+                }
+            });
+            // 検出できない場合は先頭列をデフォルト固定位置にする
+            if (schoolNameColIndex === -1 && columnDefs.length > 0) {
+                schoolNameColIndex = 0;
+            }
+
+            const tableCols = columnDefs.map((col, idx) => {
                 let numericCount = 0;
                 let validCount = 0;
                 for (let i = 0; i < Math.min(data.length, 50); i++) {
@@ -706,6 +734,7 @@
                 return {
                     title: col.originalTitle, 
                     field: col.field, 
+                    frozen: idx <= schoolNameColIndex, // 学校名までの列を左側に常に固定
                     headerFilter: isNum ? minMaxHeaderFilter : "input",
                     headerFilterFunc: isNum ? minMaxHeaderFilterFunc : "like",
                     headerFilterPlaceholder: isNum ? undefined : "検索...",
@@ -726,9 +755,10 @@
             tableInstance = new Tabulator("#data-table", {
                 data: data,
                 layout: "fitDataFill",
+                height: "calc(100vh - 280px)", // ヘッダー固定スクロール領域の動的指定
                 columns: tableCols,
                 pagination: "local",
-                paginationSize: 25,
+                paginationSize: 200,
                 paginationSizeSelector: [10, 25, 50, 100, 200],
                 movableColumns: true,
                 resizableColumns: true,
