@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学校情報 データ検索・分析ツール</title>
+    
+    <!-- Tailwind CSS (スタイリング用) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Encoding.js (日本語文字コード自動判別・強力文字化け防止用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Encoding.js/2.0.0/encoding.min.js"></script>
+    
+    <!-- PapaParse (CSV解析用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <!-- Tabulator (高機能データテーブル用) -->
+    <link href="https://unpkg.com/tabulator-tables@5.5.2/dist/css/tabulator.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.5.2/dist/js/tabulator.min.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #0c4a8e; /* ネイビー */
+        }
+        body {
+            font-family: 'Inter', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f8fafc;
+        }
+        /* Tabulator テーブルの視認性改善カスタム */
+        .tabulator {
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.75rem;
+            background-color: #ffffff !important;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+        .tabulator-header {
+            background-color: #0c4a8e !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            border-bottom: 2px solid #0369a1 !important;
+        }
+        .tabulator-header .tabulator-col {
+            background-color: #0c4a8e !important;
+            color: #ffffff !important;
+        }
+        .tabulator-header .tabulator-col-title {
+            color: #ffffff !important;
+            font-weight: 700;
+        }
+        .tabulator-row {
+            background-color: #ffffff !important;
+            border-bottom: 1px solid #f1f5f9 !important;
+        }
+        .tabulator-row:nth-child(even) {
+            background-color: #f8fafc !important;
+        }
+        .tabulator-row:hover {
+            background-color: #e0f2fe !important;
+        }
+        .tabulator-header input {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #94a3b8 !important;
+            border-radius: 4px;
+            padding: 4px 6px;
+            font-size: 0.8rem;
+        }
+        /* カスタムスクロールバー */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* トースト通知 */
+        #toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            min-width: 280px;
+            max-width: 450px;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+            word-break: break-all;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="text-slate-800 min-h-screen flex flex-col">
+
+    <header class="bg-[#0c4a8e] text-white shadow-md py-4 px-6 flex justify-between items-center shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-slate-100 text-[#0c4a8e] p-2 rounded-lg font-black text-lg leading-none">学校分析</div>
+            <div>
+                <h1 class="text-xl font-bold tracking-wide leading-tight">学校情報 データ検索・分析ツール</h1>
+                <p class="text-xs text-blue-200">複数選択フィルター・数値範囲検索・項目ソート＆表示列カスタマイズ対応</p>
+            </div>
+        </div>
+        <div id="file-status-badge" class="hidden text-xs bg-blue-800 border border-blue-600 text-blue-100 px-3 py-1.5 rounded-full flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-green-400 inline-block"></span>
+            <span id="loaded-filename">ファイルロード済み</span>
+        </div>
+    </header>
+
+    <main class="flex-grow p-4 md:p-6 flex flex-col max-w-[1600px] w-full mx-auto gap-6">
+
+        <!-- アップロードセクション -->
+        <section id="upload-section" class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 transition-all">
+            <div class="max-w-2xl mx-auto text-center space-y-4">
+                <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600 mb-1">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                </div>
+                <h2 class="text-xl md:text-2xl font-bold text-slate-800">CSVデータの読み込み</h2>
+                <p class="text-slate-500 text-xs md:text-sm">
+                    対象ファイル：<span class="font-semibold text-blue-600">学校情報_データ化.csv</span> など<br>
+                    （自動判定により Shift-JIS / UTF-8 どちらも文字化けせずに読み込まれます）
+                </p>
+                
+                <div class="pt-2 flex flex-col sm:flex-row justify-center items-center gap-4 bg-slate-50 p-5 rounded-xl border border-slate-200">
+                    <div class="flex flex-col text-left w-full sm:w-auto">
+                        <label class="text-xs font-semibold text-slate-600 mb-1">文字コード（エンコーディング）</label>
+                        <select id="encoding-select" class="border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="AUTO" selected>✨ 自動判別（推奨）</option>
+                            <option value="SJIS">Shift-JIS / CP932 (Windows Excel標準)</option>
+                            <option value="UTF8">UTF-8 (Mac / Web標準)</option>
+                            <option value="EUCJP">EUC-JP</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex flex-col text-left w-full sm:w-auto">
+                        <label class="text-xs font-semibold text-slate-600 mb-1">CSVファイルを選択</label>
+                        <label class="cursor-pointer bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium py-2 px-6 rounded-lg shadow transition-colors flex items-center justify-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            ファイルを開く
+                            <input type="file" id="csv-file" accept=".csv" class="hidden">
+                        </label>
+                    </div>
+                </div>
+                <p id="encoding-detected-info" class="text-xs text-blue-600 font-medium hidden"></p>
+            </div>
+        </section>
+
+        <!-- カテゴリクイックフィルターパネル -->
+        <section id="category-filters-panel" class="hidden bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded-full bg-blue-600"></div>
+                    <h3 class="text-sm font-bold text-slate-800">クイック条件絞り込み（複数選択可）</h3>
+                    <span class="text-xs text-slate-500">※ボタンをクリックして複数選択できます（未選択時は全選択扱い）</span>
+                </div>
+                <button id="btn-reset-pills" class="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2.5 py-1 rounded bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors">
+                    選択肢を全クリア
+                </button>
+            </div>
+
+            <!-- 動的に生成されるボタンエリア -->
+            <div id="category-pills-container" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- JSで各カテゴリのボタン群を追加 -->
+            </div>
+        </section>
+
+        <!-- テーブル＆操作パネルセクション -->
+        <section id="table-section" class="hidden flex-grow flex flex-col bg-white p-5 rounded-2xl shadow-sm border border-slate-200 gap-4">
+            
+            <!-- ツールバー -->
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-3 border-b border-slate-200">
+                
+                <!-- ステータス情報 -->
+                <div class="flex flex-wrap items-center gap-4">
+                    <div class="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2 flex items-center gap-3">
+                        <div class="text-xs text-slate-500 font-semibold">表示件数</div>
+                        <div class="text-xl font-black text-blue-900" id="total-rows-count">0 <span class="text-xs font-normal text-slate-600">/ 0 件</span></div>
+                    </div>
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 flex items-center gap-3">
+                        <div class="text-xs text-slate-500 font-semibold">表示列数</div>
+                        <div class="text-lg font-bold text-slate-700" id="visible-cols-count">0 <span class="text-xs font-normal text-slate-600">/ 0 列</span></div>
+                    </div>
+                </div>
+
+                <!-- アクションボタン群 -->
+                <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+                    
+                    <!-- 表示列設定トグルボタン -->
+                    <button id="btn-toggle-col-menu" class="text-xs bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2.5 rounded-lg font-semibold shadow-sm transition-all flex items-center gap-2">
+                        <svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2m0 10V7m6 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                        表示する列を設定
+                        <span id="col-menu-arrow" class="text-xs">▼</span>
+                    </button>
+
+                    <!-- フィルター全解除 -->
+                    <button id="btn-reset-filters" class="text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2.5 rounded-lg font-semibold transition-colors flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        すべてのフィルターをクリア
+                    </button>
+                </div>
+            </div>
+
+            <!-- 表示列選択パネル (アコーディオン/トグル式) -->
+            <div id="column-selector-panel" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 transition-all space-y-3">
+                <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                    <span class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                        表示・非表示にする列を選択してください
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <button id="btn-select-all-cols" class="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 border border-blue-200">すべて選択</button>
+                        <button id="btn-deselect-all-cols" class="text-xs text-slate-600 hover:text-slate-800 font-semibold px-2 py-1 rounded bg-slate-200 hover:bg-slate-300">すべて非表示</button>
+                    </div>
+                </div>
+                
+                <!-- 列のチェックボックス一覧コンテナ -->
+                <div id="column-checkboxes-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-60 overflow-y-auto p-1">
+                    <!-- JSで動的に追加されます -->
+                </div>
+            </div>
+
+            <!-- Tabulatorデータテーブル -->
+            <div id="data-table" class="w-full flex-grow min-h-[500px]"></div>
+            
+            <p class="text-xs text-slate-400 text-right">
+                ※ 数値項目はヘッダー下の「以上」「以下」欄で数値範囲指定が可能です。文字項目はキーワードで絞り込めます。
+            </p>
+        </section>
+
+    </main>
+
+    <!-- トースト通知用のコンテナ -->
+    <div id="toast-container"></div>
+
+    <script>
+        let rawFileBuffer = null;
+        let globalRawData = [];       // 元の解析データ
+        let globalData = [];          // フィールドキー付きデータ [{col_0: '...', col_1: '...'}, ...]
+        let columnDefs = [];          // 列情報 [{ field: 'col_0', originalTitle: '学校名' }, ...]
+        let visibleColumnsMap = {};   // col_key: boolean
+        let tableInstance = null;
+        
+        // カテゴリ複数選択フィルターの保持状態 { field_key: Set(選択値) }
+        let activeCategoryFilters = {};
+
+        // トースト通知を表示
+        function showToast(message, isError = false) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'bg-red-600' : 'bg-slate-800'}`;
+            toast.textContent = message;
+            
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        document.getElementById('csv-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('loaded-filename').textContent = file.name;
+            document.getElementById('file-status-badge').classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                rawFileBuffer = evt.target.result;
+                parseAndLoadCSV();
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // エンコーディング選択変更時のリアルタイム再解析
+        document.getElementById('encoding-select').addEventListener('change', function() {
+            if (rawFileBuffer) {
+                parseAndLoadCSV();
+            }
+        });
+
+        // 高速・安定したTextDecoderによるデコード処理
+        function detectEncoding(uint8Array) {
+            // 1. UTF-8 BOM チェック (EF BB BF)
+            if (uint8Array.length >= 3 && uint8Array[0] === 0xEF && uint8Array[1] === 0xBB && uint8Array[2] === 0xBF) {
+                return 'UTF8';
+            }
+
+            // 2. UTF-8 バイトシーケンスの厳密な検証
+            let isUtf8Valid = true;
+            let hasMultiByte = false;
+            let i = 0;
+            const len = uint8Array.length;
+
+            while (i < len) {
+                const byte1 = uint8Array[i];
+                if (byte1 <= 0x7F) {
+                    i++;
+                } else if (byte1 >= 0xC2 && byte1 <= 0xDF) {
+                    if (i + 1 >= len || (uint8Array[i + 1] & 0xC0) !== 0x80) { isUtf8Valid = false; break; }
+                    hasMultiByte = true;
+                    i += 2;
+                } else if (byte1 >= 0xE0 && byte1 <= 0xEF) {
+                    if (i + 2 >= len || (uint8Array[i + 1] & 0xC0) !== 0x80 || (uint8Array[i + 2] & 0xC0) !== 0x80) { isUtf8Valid = false; break; }
+                    hasMultiByte = true;
+                    i += 3;
+                } else if (byte1 >= 0xF0 && byte1 <= 0xF4) {
+                    if (i + 3 >= len || (uint8Array[i + 1] & 0xC0) !== 0x80 || (uint8Array[i + 2] & 0xC0) !== 0x80 || (uint8Array[i + 3] & 0xC0) !== 0x80) { isUtf8Valid = false; break; }
+                    hasMultiByte = true;
+                    i += 4;
+                } else {
+                    isUtf8Valid = false;
+                    break;
+                }
+            }
+
+            // マルチバイト文字が存在し、かつUTF-8構造として完全に正しければ UTF-8
+            if (hasMultiByte && isUtf8Valid) {
+                return 'UTF8';
+            }
+
+            // 3. Encoding.js による補助判定（EUC-JP等の特殊環境）
+            if (typeof Encoding !== 'undefined') {
+                try {
+                    const enc = Encoding.detect(uint8Array);
+                    if (enc === 'EUCJP') return 'EUCJP';
+                } catch (e) {
+                    console.warn("Encoding detection fallback", e);
+                }
+            }
+
+            // 日本語Windows/Excel標準の Shift-JIS / CP932 をデフォルトとする
+            return 'SJIS';
+        }
+
+        function decodeBuffer(buffer, selectedEncoding) {
+            const uint8Array = new Uint8Array(buffer);
+            
+            let detected = detectEncoding(uint8Array);
+            let encodingToUse = selectedEncoding === 'AUTO' ? detected : selectedEncoding;
+            
+            let labelMap = {
+                'SJIS': 'Shift-JIS / CP932 (Windows Excel標準)',
+                'UTF8': 'UTF-8',
+                'EUCJP': 'EUC-JP'
+            };
+
+            let infoText = selectedEncoding === 'AUTO' 
+                ? `✨ 自動判定結果: ${labelMap[encodingToUse] || encodingToUse}`
+                : `手動指定: ${labelMap[encodingToUse] || encodingToUse} (判定: ${labelMap[detected] || detected})`;
+
+            const infoElem = document.getElementById('encoding-detected-info');
+            infoElem.textContent = infoText;
+            infoElem.classList.remove('hidden');
+
+            let decoderLabel = 'shift-jis';
+            if (encodingToUse === 'UTF8' || encodingToUse === 'UTF-8') {
+                decoderLabel = 'utf-8';
+            } else if (encodingToUse === 'EUCJP') {
+                decoderLabel = 'euc-jp';
+            } else if (encodingToUse === 'SJIS' || encodingToUse === 'CP932') {
+                decoderLabel = 'shift-jis';
+            }
+
+            try {
+                const decoder = new TextDecoder(decoderLabel);
+                let text = decoder.decode(uint8Array);
+                
+                // BOM（Byte Order Mark）の消去
+                if (text.charCodeAt(0) === 0xFEFF) {
+                    text = text.slice(1);
+                }
+
+                // 自動判定時に文字化け記号 (U+FFFD ) が発生した場合のリカバリー処理
+                if (selectedEncoding === 'AUTO' && text.includes('\uFFFD')) {
+                    const fallbackEncoding = (encodingToUse === 'SJIS') ? 'utf-8' : 'shift-jis';
+                    console.warn(`デコード文字化けを検出。フォールバック処理 (${fallbackEncoding}) を適用します。`);
+                    
+                    const fallbackDecoder = new TextDecoder(fallbackEncoding);
+                    let fallbackText = fallbackDecoder.decode(uint8Array);
+                    if (fallbackText.charCodeAt(0) === 0xFEFF) fallbackText = fallbackText.slice(1);
+                    
+                    if (!fallbackText.includes('\uFFFD')) {
+                        infoElem.textContent = `✨ 自動判定補正: ${fallbackEncoding === 'utf-8' ? 'UTF-8' : 'Shift-JIS / CP932'}`;
+                        return fallbackText;
+                    }
+                }
+
+                return text;
+            } catch (err) {
+                console.warn("TextDecoder error, using Encoding.js fallback", err);
+                const unicodeArray = Encoding.convert(uint8Array, {
+                    to: 'UNICODE',
+                    from: encodingToUse === 'SJIS' ? 'SJIS' : 'UTF8'
+                });
+                
+                let text = '';
+                const chunkSize = 8192;
+                for (let i = 0; i < unicodeArray.length; i += chunkSize) {
+                    text += String.fromCharCode.apply(null, unicodeArray.slice(i, i + chunkSize));
+                }
+                if (text.charCodeAt(0) === 0xFEFF) {
+                    text = text.slice(1);
+                }
+                return text;
+            }
+        }
+
+        // CSV解析と画面読み込み
+        function parseAndLoadCSV() {
+            if (!rawFileBuffer) return;
+
+            const selectedEncoding = document.getElementById('encoding-select').value;
+            showToast('データを解析中...');
+
+            setTimeout(() => {
+                try {
+                    const decodedString = decodeBuffer(rawFileBuffer, selectedEncoding);
+
+                    Papa.parse(decodedString, {
+                        header: true,
+                        skipEmptyLines: 'greedy',
+                        transformHeader: function(header) {
+                            return header ? header.trim().replace(/^[\uFEFF\uFFFE]/, '') : '';
+                        },
+                        complete: function(results) {
+                            try {
+                                if (results.errors.length > 0 && results.data.length === 0) {
+                                    showToast('CSVの読み込みに失敗しました。', true);
+                                    console.error(results.errors);
+                                    return;
+                                }
+                                
+                                globalRawData = results.data;
+                                processData(globalRawData);
+                                showToast(`${globalRawData.length} 件のデータを読み込みました`);
+                            } catch (e) {
+                                console.error("Process data error:", e);
+                                showToast('データ処理中にエラーが発生しました: ' + e.message, true);
+                            }
+                        },
+                        error: function(err) {
+                            showToast('CSV解析エラーが発生しました。', true);
+                            console.error(err);
+                        }
+                    });
+                } catch (err) {
+                    console.error("Decode error:", err);
+                    showToast('ファイル読み込み中にエラーが発生しました。', true);
+                }
+            }, 50);
+        }
+
+        function processData(rawData) {
+            if (!rawData || rawData.length === 0) {
+                showToast('データが空です。', true);
+                return;
+            }
+
+            // 元のカラム名一覧（空キーを除外）
+            const rawHeaders = Object.keys(rawData[0]).filter(k => k && k.trim() !== '');
+
+            // 安全なフィールドキー（col_0, col_1...）にマッピング（ドットや記号対策）
+            columnDefs = rawHeaders.map((header, idx) => ({
+                field: `col_${idx}`,
+                originalTitle: header
+            }));
+
+            // データのフィールドキー化
+            globalData = rawData.map(row => {
+                let formattedRow = {};
+                columnDefs.forEach(col => {
+                    formattedRow[col.field] = row[col.originalTitle] !== undefined ? row[col.originalTitle] : '';
+                });
+                return formattedRow;
+            });
+
+            // 全ての列を初期状態で表示に設定
+            visibleColumnsMap = {};
+            columnDefs.forEach(col => {
+                visibleColumnsMap[col.field] = true;
+            });
+
+            activeCategoryFilters = {};
+
+            // 描画前にDOMエリアをアクティブ化して表示領域を確定させる
+            document.getElementById('upload-section').classList.add('bg-slate-50', 'p-4');
+            document.getElementById('upload-section').classList.remove('p-8');
+            document.getElementById('category-filters-panel').classList.remove('hidden');
+            document.getElementById('table-section').classList.remove('hidden');
+
+            renderColumnSelectorPanel();
+            renderCategoryPillsPanel();
+            setupTable(globalData);
+            updateCounters();
+        }
+
+        function renderCategoryPillsPanel() {
+            const panel = document.getElementById('category-filters-panel');
+            const container = document.getElementById('category-pills-container');
+            container.innerHTML = '';
+
+            // 対象カテゴリキーの検出候補
+            const targetCategories = [
+                { key: '区分', keywords: ['区分', '男子', '女子', '共学'] },
+                { key: '都県', keywords: ['都県', '都道府県', '県', 'エリア', '所在地'] },
+                { key: '進学/附属/半進学', keywords: ['進学', '附属', '付属', '半進学', '半附属', '校種', 'タイプ', '分類'] }
+            ];
+
+            let foundCount = 0;
+
+            targetCategories.forEach(target => {
+                // キーワードに合致するカラムを特定
+                let matchedColDef = columnDefs.find(col => {
+                    let title = col.originalTitle.toLowerCase();
+                    return target.keywords.some(kw => title.includes(kw.toLowerCase()));
+                });
+
+                if (matchedColDef) {
+                    foundCount++;
+                    const fieldKey = matchedColDef.field;
+                    
+                    // 列のユニーク値一覧を取得
+                    let rawVals = globalData
+                        .map(row => row[fieldKey])
+                        .filter(v => v !== undefined && v !== null && v.toString().trim() !== '');
+                    let uniqueVals = Array.from(new Set(rawVals)).sort();
+
+                    if (uniqueVals.length > 0) {
+                        if (!activeCategoryFilters[fieldKey]) {
+                            activeCategoryFilters[fieldKey] = new Set();
+                        }
+
+                        const box = document.createElement('div');
+                        box.className = 'bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col gap-2.5';
+
+                        const head = document.createElement('div');
+                        head.className = 'flex justify-between items-center border-b border-slate-200 pb-2';
+                        
+                        const title = document.createElement('span');
+                        title.className = 'text-xs font-bold text-slate-800 flex items-center gap-1.5';
+                        title.innerHTML = `<span class="w-2 h-2 rounded-full bg-blue-600"></span>${target.key} <span class="text-slate-400 font-normal">(${matchedColDef.originalTitle})</span>`;
+
+                        const clearBtn = document.createElement('button');
+                        clearBtn.className = 'text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-white hover:bg-blue-50 border border-slate-200 px-2 py-0.5 rounded transition-colors';
+                        clearBtn.textContent = '解除';
+                        clearBtn.onclick = function() {
+                            activeCategoryFilters[fieldKey].clear();
+                            renderCategoryPillsPanel();
+                            applyCategoryFilters();
+                        };
+
+                        head.appendChild(title);
+                        head.appendChild(clearBtn);
+                        box.appendChild(head);
+
+                        const pillsDiv = document.createElement('div');
+                        pillsDiv.className = 'flex flex-wrap gap-1.5';
+
+                        uniqueVals.forEach(val => {
+                            const isSelected = activeCategoryFilters[fieldKey].has(val);
+                            const btn = document.createElement('button');
+                            
+                            if (isSelected) {
+                                btn.className = 'text-xs px-2.5 py-1 rounded-lg font-bold bg-[#0c4a8e] text-white border border-[#0c4a8e] shadow-sm flex items-center gap-1 transition-all';
+                                btn.innerHTML = `<span>✓</span> <span>${val}</span>`;
+                            } else {
+                                btn.className = 'text-xs px-2.5 py-1 rounded-lg font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition-all';
+                                btn.textContent = val;
+                            }
+
+                            btn.onclick = function() {
+                                if (activeCategoryFilters[fieldKey].has(val)) {
+                                    activeCategoryFilters[fieldKey].delete(val);
+                                } else {
+                                    activeCategoryFilters[fieldKey].add(val);
+                                }
+                                renderCategoryPillsPanel();
+                                applyCategoryFilters();
+                            };
+
+                            pillsDiv.appendChild(btn);
+                        });
+
+                        box.appendChild(pillsDiv);
+                        container.appendChild(box);
+                    }
+                }
+            });
+
+            if (foundCount > 0) {
+                panel.classList.remove('hidden');
+            } else {
+                panel.classList.add('hidden');
+            }
+        }
+
+        // 全てのピルフィルター解除ボタン
+        document.getElementById('btn-reset-pills').addEventListener('click', function() {
+            for (let fKey in activeCategoryFilters) {
+                activeCategoryFilters[fKey].clear();
+            }
+            renderCategoryPillsPanel();
+            applyCategoryFilters();
+        });
+
+        function applyCategoryFilters() {
+            if (!tableInstance) return;
+
+            tableInstance.setFilter(function(data) {
+                for (let fKey in activeCategoryFilters) {
+                    let set = activeCategoryFilters[fKey];
+                    if (set && set.size > 0) {
+                        let cellVal = data[fKey];
+                        if (cellVal === undefined || cellVal === null || !set.has(cellVal.toString().trim())) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            });
+            updateCounters();
+        }
+
+        function minMaxHeaderFilter(cell, onRendered, success, cancel, editorParams) {
+            const container = document.createElement("div");
+            container.className = "flex flex-col gap-1 p-1 w-full";
+
+            container.addEventListener("click", function(e) {
+                e.stopPropagation();
+            });
+
+            const minInput = document.createElement("input");
+            minInput.type = "number";
+            minInput.placeholder = "以上";
+            minInput.className = "w-full text-xs px-1.5 py-1 border border-slate-300 rounded text-slate-900 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal";
+
+            const maxInput = document.createElement("input");
+            maxInput.type = "number";
+            maxInput.placeholder = "以下";
+            maxInput.className = "w-full text-xs px-1.5 py-1 border border-slate-300 rounded text-slate-900 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal";
+
+            function updateFilter() {
+                const minVal = minInput.value !== "" ? parseFloat(minInput.value) : null;
+                const maxVal = maxInput.value !== "" ? parseFloat(maxInput.value) : null;
+                
+                if (minVal === null && maxVal === null) {
+                    success(null);
+                } else {
+                    success({ min: minVal, max: maxVal });
+                }
+            }
+
+            minInput.addEventListener("input", updateFilter);
+            maxInput.addEventListener("input", updateFilter);
+
+            container.appendChild(minInput);
+            container.appendChild(maxInput);
+
+            return container;
+        }
+
+        function minMaxHeaderFilterFunc(headerValue, rowValue, rowData, filterParams) {
+            if (!headerValue) return true;
+            if (headerValue.min === null && headerValue.max === null) return true;
+            if (rowValue === undefined || rowValue === null || rowValue.toString().trim() === "") return false;
+
+            let cleanStr = rowValue.toString().replace(/,/g, '').replace(/%/g, '').trim();
+            let val = parseFloat(cleanStr);
+            
+            if (isNaN(val)) return false;
+
+            if (headerValue.min !== null && val < headerValue.min) return false;
+            if (headerValue.max !== null && val > headerValue.max) return false;
+
+            return true;
+        }
+
+        function setupTable(data) {
+            const tableCols = columnDefs.map(col => {
+                let numericCount = 0;
+                let validCount = 0;
+                for (let i = 0; i < Math.min(data.length, 50); i++) {
+                    let val = data[i][col.field];
+                    if (val !== undefined && val !== null && val.toString().trim() !== '') {
+                        validCount++;
+                        let cleaned = val.toString().replace(/,/g, '').replace(/%/g, '').trim();
+                        if (!isNaN(parseFloat(cleaned)) && isFinite(cleaned)) {
+                            numericCount++;
+                        }
+                    }
+                }
+                const isNum = validCount > 0 && (numericCount / validCount) > 0.6;
+
+                return {
+                    title: col.originalTitle, 
+                    field: col.field, 
+                    headerFilter: isNum ? minMaxHeaderFilter : "input",
+                    headerFilterFunc: isNum ? minMaxHeaderFilterFunc : "like",
+                    headerFilterPlaceholder: isNum ? undefined : "検索...",
+                    sorter: isNum ? "number" : "string",
+                    headerSort: true,
+                    visible: visibleColumnsMap[col.field],
+                    formatter: function(cell) {
+                        let val = cell.getValue();
+                        return val !== undefined && val !== null ? val : "";
+                    }
+                };
+            });
+
+            if (tableInstance) {
+                tableInstance.destroy();
+            }
+
+            tableInstance = new Tabulator("#data-table", {
+                data: data,
+                layout: "fitDataFill",
+                columns: tableCols,
+                pagination: "local",
+                paginationSize: 25,
+                paginationSizeSelector: [10, 25, 50, 100, 200],
+                movableColumns: true,
+                resizableColumns: true,
+                placeholder: "該当するデータが見つかりません",
+                dataFiltered: function(filters, rows) {
+                    updateCounters();
+                }
+            });
+        }
+
+        function renderColumnSelectorPanel() {
+            const container = document.getElementById('column-checkboxes-container');
+            container.innerHTML = '';
+
+            columnDefs.forEach(col => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 cursor-pointer text-xs hover:bg-blue-50 transition-colors select-none';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = visibleColumnsMap[col.field];
+                checkbox.className = 'rounded text-blue-600 focus:ring-blue-500 h-4 w-4';
+                
+                checkbox.addEventListener('change', function() {
+                    toggleColumnVisibility(col.field, this.checked);
+                });
+
+                const textSpan = document.createElement('span');
+                textSpan.className = 'text-slate-700 font-medium truncate';
+                textSpan.title = col.originalTitle;
+                textSpan.textContent = col.originalTitle;
+
+                label.appendChild(checkbox);
+                label.appendChild(textSpan);
+                container.appendChild(label);
+            });
+        }
+
+        function toggleColumnVisibility(fieldKey, isVisible) {
+            visibleColumnsMap[fieldKey] = isVisible;
+            if (tableInstance) {
+                if (isVisible) {
+                    tableInstance.showColumn(fieldKey);
+                } else {
+                    tableInstance.hideColumn(fieldKey);
+                }
+            }
+            updateCounters();
+        }
+
+        function updateCounters() {
+            const totalDataCount = globalData.length;
+            const activeRowsCount = tableInstance ? tableInstance.getData("active").length : totalDataCount;
+            
+            document.getElementById('total-rows-count').innerHTML = `${activeRowsCount.toLocaleString()} <span class="text-xs font-normal text-slate-600">/ ${totalDataCount.toLocaleString()} 件</span>`;
+
+            const totalCols = columnDefs.length;
+            const visibleCols = Object.values(visibleColumnsMap).filter(Boolean).length;
+            
+            document.getElementById('visible-cols-count').innerHTML = `${visibleCols} <span class="text-xs font-normal text-slate-600">/ ${totalCols} 列</span>`;
+        }
+
+        document.getElementById('btn-toggle-col-menu').addEventListener('click', function() {
+            const panel = document.getElementById('column-selector-panel');
+            const arrow = document.getElementById('col-menu-arrow');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                arrow.textContent = '▲';
+            } else {
+                panel.classList.add('hidden');
+                arrow.textContent = '▼';
+            }
+        });
+
+        document.getElementById('btn-select-all-cols').addEventListener('click', function() {
+            columnDefs.forEach(col => {
+                visibleColumnsMap[col.field] = true;
+                if (tableInstance) tableInstance.showColumn(col.field);
+            });
+            renderColumnSelectorPanel();
+            updateCounters();
+        });
+
+        document.getElementById('btn-deselect-all-cols').addEventListener('click', function() {
+            columnDefs.forEach(col => {
+                visibleColumnsMap[col.field] = false;
+                if (tableInstance) tableInstance.hideColumn(col.field);
+            });
+            renderColumnSelectorPanel();
+            updateCounters();
+        });
+
+        // フィルター一括解除ボタン
+        document.getElementById('btn-reset-filters').addEventListener('click', function() {
+            // ピルフィルターのリセット
+            for (let fKey in activeCategoryFilters) {
+                activeCategoryFilters[fKey].clear();
+            }
+            renderCategoryPillsPanel();
+
+            // Tabulatorヘッダーフィルターのリセット
+            if (tableInstance) {
+                tableInstance.clearHeaderFilter();
+                tableInstance.clearFilter();
+                showToast('すべてのフィルターをクリアしました');
+            }
+            updateCounters();
+        });
+    </script>
+</body>
+</html>
