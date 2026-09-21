@@ -524,25 +524,100 @@
             const container = document.getElementById('category-pills-container');
             container.innerHTML = '';
 
-            // 対象カテゴリキーの検出候補（「男女共」「区分」「性別」などを自動認識）
+            // 対象カテゴリキーの検出候補（「区分」「男女共」などをそれぞれ独立して自動認識）
             const targetCategories = [
-                { key: '区分／男女共', keywords: ['区分', '男女共', '男女', '性別', '男子', '女子', '共学', '校種'] },
-                { key: '都県', keywords: ['都県', '都道府県', '県', 'エリア', '所在地'] },
-                { key: '進学/附属/半進学', keywords: ['進学', '附属', '付属', '半進学', '半附属', 'タイプ', '分類'] }
+                { 
+                    key: '区分', 
+                    exactKeys: ['区分', '校種', '設立区分', '設置区分', '国公私立'],
+                    keywords: ['区分', '校種', '設立', '設置', '国公私立'],
+                    excludeWords: ['平均', '率', '数', '偏差値', '比', '点', '順位', '割合', '人数', '年', 'コード'],
+                    valueKeywords: ['私立', '公立', '国立', '都立', '県立', '市立']
+                },
+                { 
+                    key: '男女共', 
+                    exactKeys: ['男女共', '男女', '性別', '共学', '男女別', '男女区分', '男子/女子', '男子・女子', '性別区分'],
+                    keywords: ['男女共', '性別', '共学', '別学', '男女'],
+                    excludeWords: ['平均', '率', '数', '偏差値', '比', '点', '順位', '割合', '人数', '前年', '過去', '合格'],
+                    valueKeywords: ['男', '女', '共', '共学', '男子', '女子', '別学', '男子校', '女子校']
+                },
+                { 
+                    key: '都県', 
+                    exactKeys: ['都県', '都道府県', '県', '所在地', 'エリア', '地域', '都道府県名'],
+                    keywords: ['都県', '都道府県', '所在地', 'エリア', '地域', '県'],
+                    excludeWords: ['平均', '率', '数', '偏差値', '比', '点', '順位', '割合', '人数', 'コード', '郵便'],
+                    valueKeywords: ['東京', '神奈川', '埼玉', '千葉', '茨城', '栃木', '群馬', '山梨', '都', '県']
+                },
+                { 
+                    key: '進学/附属/半進学', 
+                    exactKeys: ['進学/附属/半進学', 'タイプ', '分類', '学校タイプ', '附属区分', '進学区分'],
+                    keywords: ['進学', '附属', '付属', '半進学', '半附属', 'タイプ', '分類'],
+                    excludeWords: ['平均', '率', '数', '偏差値', '比', '点', '順位', '割合', '人数'],
+                    valueKeywords: ['進学', '附属', '付属', '半進学', '系']
+                }
             ];
 
             let foundCount = 0;
+            let usedFields = new Set();
 
             targetCategories.forEach(target => {
-                // キーワードに合致するカラムを特定
-                let matchedColDef = columnDefs.find(col => {
-                    let title = col.originalTitle.toLowerCase();
-                    return target.keywords.some(kw => title.includes(kw.toLowerCase()));
+                const excludeWords = target.excludeWords || [];
+
+                let bestCol = null;
+                let bestScore = -1;
+
+                columnDefs.forEach(col => {
+                    if (usedFields.has(col.field)) return;
+
+                    let title = col.originalTitle.trim();
+                    let titleLower = title.toLowerCase();
+
+                    // 除外キーワードが含まれる場合はスキップ
+                    if (excludeWords.some(ew => titleLower.includes(ew.toLowerCase()))) return;
+
+                    // サンプルデータで数値率を計算
+                    let sampleVals = globalData.slice(0, 50).map(row => (row[col.field] || '').toString().trim()).filter(Boolean);
+                    if (sampleVals.length === 0) return;
+
+                    let numericCount = sampleVals.filter(v => {
+                        let cleaned = v.replace(/,/g, '').replace(/%/g, '');
+                        return !isNaN(parseFloat(cleaned)) && isFinite(cleaned);
+                    }).length;
+
+                    // サンプルの半分以上が数値の場合は数値列とみなしてカテゴリ対象から外す
+                    if (numericCount / sampleVals.length > 0.5) return;
+
+                    let score = 0;
+
+                    // 1. 完全一致
+                    if (target.exactKeys && target.exactKeys.some(k => titleLower === k.toLowerCase())) {
+                        score += 100;
+                    }
+
+                    // 2. キーワード部分一致
+                    if (target.keywords.some(kw => titleLower.includes(kw.toLowerCase()))) {
+                        score += 30;
+                    }
+
+                    // 3. 値に特定キーワード（男, 女, 共学 等）が含まれるかチェック
+                    if (target.valueKeywords) {
+                        let matchValCount = sampleVals.filter(v => 
+                            target.valueKeywords.some(vk => v.includes(vk))
+                        ).length;
+                        if (matchValCount > 0) {
+                            score += Math.min(40, matchValCount * 5);
+                        }
+                    }
+
+                    if (score > bestScore && score >= 30) {
+                        bestScore = score;
+                        bestCol = col;
+                    }
                 });
 
-                if (matchedColDef) {
+                if (bestCol) {
+                    usedFields.add(bestCol.field);
                     foundCount++;
-                    const fieldKey = matchedColDef.field;
+                    const fieldKey = bestCol.field;
                     
                     // 列のユニーク値一覧を取得
                     let rawVals = globalData
@@ -563,7 +638,7 @@
                         
                         const title = document.createElement('span');
                         title.className = 'text-xs font-bold text-slate-800 flex items-center gap-1.5';
-                        title.innerHTML = `<span class="w-2 h-2 rounded-full bg-blue-600"></span>${target.key} <span class="text-slate-400 font-normal">(${matchedColDef.originalTitle})</span>`;
+                        title.innerHTML = `<span class="w-2 h-2 rounded-full bg-blue-600"></span>${target.key} <span class="text-slate-400 font-normal">(${bestCol.originalTitle})</span>`;
 
                         const clearBtn = document.createElement('button');
                         clearBtn.className = 'text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-white hover:bg-blue-50 border border-slate-200 px-2 py-0.5 rounded transition-colors';
