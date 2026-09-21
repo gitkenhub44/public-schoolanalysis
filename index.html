@@ -40,6 +40,9 @@
             color: #ffffff !important;
             font-weight: 600 !important;
             border-bottom: 2px solid #0369a1 !important;
+            position: sticky !important;
+            top: 0;
+            z-index: 20 !important;
         }
         .tabulator-header .tabulator-col {
             background-color: #0c4a8e !important;
@@ -52,6 +55,7 @@
         .tabulator-row {
             background-color: #ffffff !important;
             border-bottom: 1px solid #f1f5f9 !important;
+        }
         .tabulator-header .tabulator-header-filter input {
             background-color: #ffffff !important;
             color: #0f172a !important;
@@ -59,12 +63,6 @@
             border-radius: 4px;
             padding: 4px 6px;
             font-size: 0.8rem;
-        }
-        /* ヘッダー部の固定表示（スティッキー）設定 */
-        .tabulator-header {
-            position: sticky !important;
-            top: 0;
-            z-index: 20 !important;
         }
         /* 固定列（Frozen Column）の視認性向上 */
         .tabulator-cell.tabulator-frozen, .tabulator-col.tabulator-frozen {
@@ -397,7 +395,7 @@
                     text = text.slice(1);
                 }
 
-                // 自動判定時に文字化け記号 (U+FFFD ) が発生した場合のリカバリー処理
+                // 自動判定時に文字化け記号 (U+FFFD) が発生した場合のリカバリー処理
                 if (selectedEncoding === 'AUTO' && text.includes('\uFFFD')) {
                     const fallbackEncoding = (encodingToUse === 'SJIS') ? 'utf-8' : 'shift-jis';
                     console.warn(`デコード文字化けを検出。フォールバック処理 (${fallbackEncoding}) を適用します。`);
@@ -526,11 +524,11 @@
             const container = document.getElementById('category-pills-container');
             container.innerHTML = '';
 
-            // 対象カテゴリキーの検出候補
+            // 対象カテゴリキーの検出候補（「男女共」「区分」「性別」などを自動認識）
             const targetCategories = [
-                { key: '区分', keywords: ['区分', '男子', '女子', '共学'] },
+                { key: '区分／男女共', keywords: ['区分', '男女共', '男女', '性別', '男子', '女子', '共学', '校種'] },
                 { key: '都県', keywords: ['都県', '都道府県', '県', 'エリア', '所在地'] },
-                { key: '進学/附属/半進学', keywords: ['進学', '附属', '付属', '半進学', '半附属', '校種', 'タイプ', '分類'] }
+                { key: '進学/附属/半進学', keywords: ['進学', '附属', '付属', '半進学', '半附属', 'タイプ', '分類'] }
             ];
 
             let foundCount = 0;
@@ -758,8 +756,8 @@
                 height: "calc(100vh - 280px)", // ヘッダー固定スクロール領域の動的指定
                 columns: tableCols,
                 pagination: "local",
-                paginationSize: 200,
-                paginationSizeSelector: [10, 25, 50, 100, 200],
+                paginationSize: 200, // デフォルト表示件数を200件に指定
+                paginationSizeSelector: [10, 25, 50, 100, 200, 500],
                 movableColumns: true,
                 resizableColumns: true,
                 placeholder: "該当するデータが見つかりません",
